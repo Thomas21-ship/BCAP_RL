@@ -17,7 +17,3 @@ def generate_single_vessel(last_arrival_time=0):
     arrival_time = last_arrival_time + inter_arrival_time
     
     return [float(length), float(workload), float(arrival_time)]
-
-# Test
-raw_vessel = generate_single_vessel(0)
-print(f"Raw: {raw_vessel}")
