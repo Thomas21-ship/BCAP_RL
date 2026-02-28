@@ -1,0 +1,2 @@
+timestamp_utc,seed,total_reward,total_steps,vessels_total,vessels_departed,vessels_docked,vessels_waiting,completion_ratio,mean_docking_wait_steps,max_docking_wait_steps,mean_unresolved_wait_steps,avg_processed_pct,crane_utilization,invalid_action_rate,model_save_path,used_best_model
+2026-02-28T19:49:00Z,7,-2199.5524598528887,672,10,1,0,9,0.1,0.401765732053633,0.401765732053633,393.5309727397288,10.0,0.02891156462585034,0.9985119047619048,models/ppo_antwerp_port,False

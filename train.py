@@ -1,298 +1,331 @@
 # =============================================================================
-# train.py — Training the RL Agent on the Antwerp Port Simulation
-# =============================================================================
-#
-# WHAT THIS FILE DOES (in plain English):
-#   1. Loads the port environment (the bridge simulator)
-#   2. Runs a pre-departure safety check on the environment
-#   3. Creates a PPO agent and trains it over many simulated weeks
-#   4. Saves the trained model to disk
-#   5. Runs a test episode to show how the trained agent performs
-#
-# HOW TO RUN THIS FILE:
-#   Open a terminal in the project folder and type:
-#       python train.py
-#
-# EXPECTED RUNTIME:
-#   500,000 timesteps takes roughly 3–10 minutes on a modern laptop.
-#   You can reduce TOTAL_TIMESTEPS below if you just want to test the setup.
-#
+# train.py - Training the RL Agent on the Antwerp Port Simulation
 # =============================================================================
 
-# --- IMPORTS ---
-# Think of imports like loading charts before a voyage.
-# We pull in the tools we need before the simulation starts.
+from __future__ import annotations
 
-from stable_baselines3 import PPO
-# PPO = Proximal Policy Optimisation. This is the AI instructor.
-# It watches the agent's decisions and slowly improves its strategy.
-
-from stable_baselines3.common.env_checker import check_env
-# check_env = the pre-departure safety inspection tool.
-# It verifies our environment is correctly built before we waste training time.
-
-from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-# Callbacks = automatic actions that fire during training at set intervals.
-# Like waypoints on a passage plan — the system checks in and logs progress.
-
+import argparse
+import csv
+import json
 import os
-# os = operating system tools. We use it to create folders for saving files.
+import random
+from datetime import datetime, timezone
+
+import numpy as np
+import torch
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import (
+    CheckpointCallback,
+    EvalCallback,
+    StopTrainingOnNoModelImprovement,
+)
+from stable_baselines3.common.env_checker import check_env
 
 from port_env import AntwerpPortEnv
-# Our port simulation — the bridge simulator the agent will train on.
 
 
-# =============================================================================
-# CONFIGURATION — Change these values to adjust training
-# =============================================================================
-
-TOTAL_TIMESTEPS = 500_000
-# Total number of individual 15-minute steps across ALL training episodes.
-# One episode = one simulated week = 672 steps.
-# 500,000 steps ÷ 672 steps/week ≈ 744 simulated weeks of training.
-#
-# Start with 100_000 to test the setup quickly.
-# Use 1_000_000 or more for serious training.
-
-MODEL_SAVE_PATH = "models/ppo_antwerp_port"
-# Where to save the trained model when training is complete.
-# Like signing off a completed voyage log and filing it.
-
-LOG_DIR = "logs/"
-# Where TensorBoard training logs are saved.
-# TensorBoard is a visual dashboard — you can watch the agent improve over time.
-# To view it: open a terminal and type: tensorboard --logdir logs/
-
-EVAL_FREQ = 10_000
-# How often (in timesteps) to automatically test the agent during training.
-# Every 10,000 steps, training pauses briefly and runs a test episode.
-# Think of it as periodic performance reviews during a long voyage.
-
-CHECKPOINT_FREQ = 50_000
-# How often to save a snapshot of the model during training.
-# Like taking a position fix every few hours — so you have a fallback
-# if something goes wrong later.
-
-
-# =============================================================================
-# STEP 1 — Create and inspect the environment
-# =============================================================================
-
-print("=" * 60)
-print("ANTWERP PORT RL — TRAINING SCRIPT")
-print("=" * 60)
-
-print("\n[1/5] Creating the port environment...")
-env = AntwerpPortEnv()
-# This creates a fresh instance of our port simulator.
-# Nothing has happened yet — no vessels, no cranes working.
-# Think of this as powering up the bridge simulator before the cadet sits down.
-
-print("      Environment created. ✅")
-
-# --- PRE-DEPARTURE SAFETY CHECK ---
-print("\n[2/5] Running pre-departure safety check (check_env)...")
-# check_env inspects the environment for common mistakes:
-#   - Are observations within the declared [0, 1] range?
-#   - Does the action space match what step() expects?
-#   - Does reset() return the right format?
-# If it finds problems, it prints warnings. Fix those before continuing.
-check_env(env, warn=True)
-print("      Safety check complete. ✅")
-print("      (If warnings appeared above, review them before full training.)")
+DEFAULT_CONFIG = {
+    "seed": 42,
+    "total_timesteps": 500_000,
+    "model_save_path": "models/ppo_antwerp_port",
+    "log_dir": "logs/",
+    "eval_freq": 10_000,
+    "checkpoint_freq": 50_000,
+    "ppo": {
+        "learning_rate": 3e-4,
+        "n_steps": 2048,
+        "batch_size": 64,
+        "n_epochs": 10,
+        "gamma": 0.99,
+    },
+    "env": {
+        "invalid_action_penalty": 0.25,
+        "terminate_on_invalid_action": False,
+        "waiting_ship_penalty": 0.02,
+        "long_wait_penalty": 0.002,
+        "long_wait_threshold": 16,
+    },
+    "early_stopping": {
+        "enabled": True,
+        "max_no_improvement_evals": 6,
+        "min_evals": 5,
+    },
+    "kpi": {
+        "enabled": True,
+        "output_dir": "metrics",
+    },
+}
 
 
-# =============================================================================
-# STEP 2 — Create the PPO agent
-# =============================================================================
-
-print("\n[3/5] Creating the PPO agent...")
-
-# Create output folders if they don't exist yet
-os.makedirs("models", exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-# exist_ok=True means: "create the folder if it's missing, do nothing if it's there"
-
-model = PPO(
-    policy="MlpPolicy",
-    # "MlpPolicy" = Multi-Layer Perceptron policy.
-    # This is a standard neural network — think of it as the agent's brain.
-    # MlpPolicy is the right choice when your observations are a flat list of numbers,
-    # which is exactly what our 80-number observation space is.
-
-    env=env,
-    # The environment the agent will train on — our port simulator.
-
-    verbose=1,
-    # Controls how much training information is printed to the terminal.
-    # 0 = silent, 1 = progress updates, 2 = very detailed.
-    # Like setting your VHF squelch — 1 is a good balance.
-
-    learning_rate=3e-4,
-    # How quickly the agent updates its strategy after each batch of experience.
-    # 3e-4 = 0.0003. This is the SB3 default and a safe starting value.
-    # Too high: the agent overcorrects (like a helmsman fighting the wheel).
-    # Too low: training takes forever (like barely touching the helm).
-
-    n_steps=2048,
-    # How many steps the agent collects before running a learning update.
-    # Think of it as the length of a watch before the officer debrief.
-    # Larger = more stable but slower updates.
-
-    batch_size=64,
-    # During each learning update, the collected steps are split into mini-batches.
-    # The agent learns from 64 steps at a time within each batch.
-
-    n_epochs=10,
-    # How many times the agent re-reads each batch of experience to learn from it.
-    # More passes = more learning from the same data, but diminishing returns.
-
-    gamma=0.99,
-    # Discount factor — how much the agent values future rewards vs immediate ones.
-    # 0.99 means the agent cares a lot about long-term outcomes.
-    # (A reward in the future is worth 99% as much as the same reward now.)
-    # This is important for our simulation: vessels take many steps to process,
-    # so the agent needs to think ahead.
-
-    tensorboard_log=LOG_DIR,
-    # Where to write training logs for visualisation in TensorBoard.
-)
-
-print("      PPO agent created. ✅")
-print(f"      Policy network: {model.policy}")
+def _deep_merge(base: dict, updates: dict) -> dict:
+    merged = dict(base)
+    for k, v in updates.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
 
 
-# =============================================================================
-# STEP 3 — Set up training callbacks (automatic waypoint checks)
-# =============================================================================
+def load_config() -> dict:
+    parser = argparse.ArgumentParser(description="Train PPO on AntwerpPortEnv")
+    parser.add_argument("--config", default="training_config.json", help="Path to JSON config file")
+    parser.add_argument("--seed", type=int, default=None, help="Override seed from config")
+    parser.add_argument("--timesteps", type=int, default=None, help="Override total_timesteps from config")
+    args = parser.parse_args()
 
-print("\n[4/5] Setting up training callbacks...")
+    config = dict(DEFAULT_CONFIG)
+    if os.path.exists(args.config):
+        with open(args.config, "r", encoding="utf-8") as f:
+            file_cfg = json.load(f)
+        config = _deep_merge(config, file_cfg)
 
-# --- EVALUATION CALLBACK ---
-# Every EVAL_FREQ steps, this automatically runs 5 test episodes
-# and logs the average reward. Useful for spotting if the agent has
-# plateaued or if something has gone wrong.
-eval_env = AntwerpPortEnv()  # A separate environment just for evaluation
-                              # We keep it separate so it doesn't interfere
-                              # with the training environment's state.
+    if args.seed is not None:
+        config["seed"] = args.seed
+    if args.timesteps is not None:
+        config["total_timesteps"] = args.timesteps
 
-eval_callback = EvalCallback(
-    eval_env,
-    best_model_save_path=MODEL_SAVE_PATH + "_best",
-    log_path=LOG_DIR,
-    eval_freq=EVAL_FREQ,
-    n_eval_episodes=5,         # Run 5 full episodes (weeks) per evaluation
-    deterministic=True,        # During eval, the agent always picks its best action
-                               # (no random exploration). Like exam conditions.
-    render=False,
-)
-
-# --- CHECKPOINT CALLBACK ---
-# Every CHECKPOINT_FREQ steps, save a snapshot of the model.
-# Like taking a position fix during a long passage — you have a fallback.
-checkpoint_callback = CheckpointCallback(
-    save_freq=CHECKPOINT_FREQ,
-    save_path=MODEL_SAVE_PATH + "_checkpoints/",
-    name_prefix="ppo_port",
-)
-
-print("      Callbacks ready. ✅")
+    config["_config_path"] = args.config
+    return config
 
 
-# =============================================================================
-# STEP 4 — Train the agent
-# =============================================================================
-
-print("\n[5/5] Starting training...")
-print(f"      Total timesteps: {TOTAL_TIMESTEPS:,}")
-print(f"      Approximate episodes: {TOTAL_TIMESTEPS // 672:,} simulated weeks")
-print(f"      Model will be saved to: {MODEL_SAVE_PATH}.zip")
-print("-" * 60)
-
-# This is where the actual training happens.
-# The agent runs the simulation over and over, collecting experience
-# and slowly improving its berth allocation strategy.
-# Think of this as a cadet sitting at a bridge simulator for hundreds
-# of voyages, with an instructor adjusting their technique after each one.
-model.learn(
-    total_timesteps=TOTAL_TIMESTEPS,
-    callback=[eval_callback, checkpoint_callback],
-    # We pass both callbacks as a list — both fire at their respective intervals.
-)
-
-print("-" * 60)
-print("\n✅ Training complete!")
-
-# Save the final trained model
-model.save(MODEL_SAVE_PATH)
-# This saves the model as a .zip file at the path we specified.
-# You can reload this later with: model = PPO.load("models/ppo_antwerp_port")
-print(f"   Final model saved to: {MODEL_SAVE_PATH}.zip")
+def apply_env_config(env: AntwerpPortEnv, env_cfg: dict) -> None:
+    for key, value in env_cfg.items():
+        if hasattr(env, key):
+            setattr(env, key, value)
 
 
-# =============================================================================
-# STEP 5 — Post-training evaluation (watch the trained agent in action)
-# =============================================================================
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
-print("\n" + "=" * 60)
-print("POST-TRAINING EVALUATION — One Full Simulated Week")
-print("=" * 60)
-print("Running one complete episode with the trained agent...")
-print("(deterministic=True means the agent always picks its best action)\n")
 
-# Load a fresh environment for the test run
-test_env = AntwerpPortEnv()
-obs, info = test_env.reset()
+def compute_kpis(test_env: AntwerpPortEnv, total_reward: float, total_steps: int,
+                 cranes_sum: float, invalid_steps: int, seed: int) -> dict:
+    vessels = test_env.vessels
+    departed = sum(1 for v in vessels if v.status == "departed")
+    waiting = sum(1 for v in vessels if v.status == "waiting")
+    docked = sum(1 for v in vessels if v.status == "docked")
 
-# Counters to track what happened during the test episode
-total_reward   = 0.0
-total_dockings = 0
-total_steps    = 0
+    docking_waits = [
+        max(0.0, float(v.docking_step - v.arrival_time))
+        for v in vessels
+        if hasattr(v, "docking_step")
+    ]
+    unresolved_waits = [
+        max(0.0, float(test_env.current_step - v.arrival_time))
+        for v in vessels
+        if v.status == "waiting" and v.arrival_time <= test_env.current_step
+    ]
 
-# Step through the full episode (up to 672 steps = one week)
-while True:
-    # The agent looks at the observation and chooses an action.
-    # deterministic=True means no random exploration — pure best guess.
-    action, _states = model.predict(obs, deterministic=True)
-    # _states is used by recurrent policies (LSTM etc). PPO doesn't use it — ignore it.
+    completed_pct = [
+        ((v.workload - v.containers_remaining) / v.workload) * 100.0 if v.workload > 0 else 0.0
+        for v in vessels
+    ]
 
-    obs, reward, terminated, truncated, info = test_env.step(action)
+    crane_util = cranes_sum / max(1, total_steps * test_env.total_cranes_limit)
+    invalid_rate = invalid_steps / max(1, total_steps)
 
-    total_reward += reward
-    total_steps  += 1
+    return {
+        "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "seed": int(seed),
+        "total_reward": float(total_reward),
+        "total_steps": int(total_steps),
+        "vessels_total": int(len(vessels)),
+        "vessels_departed": int(departed),
+        "vessels_docked": int(docked),
+        "vessels_waiting": int(waiting),
+        "completion_ratio": float(departed / max(1, len(vessels))),
+        "mean_docking_wait_steps": float(np.mean(docking_waits)) if docking_waits else None,
+        "max_docking_wait_steps": float(np.max(docking_waits)) if docking_waits else None,
+        "mean_unresolved_wait_steps": float(np.mean(unresolved_waits)) if unresolved_waits else 0.0,
+        "avg_processed_pct": float(np.mean(completed_pct)) if completed_pct else 0.0,
+        "crane_utilization": float(crane_util),
+        "invalid_action_rate": float(invalid_rate),
+    }
 
-    # Detect a successful docking by watching for the +1.0 docking reward component.
-    # Note: reward also includes throughput and penalties, so we check the vessels.
-    docked_this_step = sum(
-        1 for v in test_env.vessels if v.status == "docked" and v.cranes_assigned > 0
+
+def save_kpis(kpi_cfg: dict, metrics: dict) -> tuple[str, str]:
+    out_dir = kpi_cfg.get("output_dir", "metrics")
+    os.makedirs(out_dir, exist_ok=True)
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    json_path = os.path.join(out_dir, f"run_{run_id}.json")
+    csv_path = os.path.join(out_dir, "runs.csv")
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    headers = list(metrics.keys())
+    write_header = not os.path.exists(csv_path)
+    with open(csv_path, "a", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(metrics)
+
+    return json_path, csv_path
+
+
+def main() -> None:
+    cfg = load_config()
+    seed = int(cfg["seed"])
+    total_timesteps = int(cfg["total_timesteps"])
+    model_save_path = cfg["model_save_path"]
+    log_dir = cfg["log_dir"]
+    eval_freq = int(cfg["eval_freq"])
+    checkpoint_freq = int(cfg["checkpoint_freq"])
+
+    print("=" * 60)
+    print("ANTWERP PORT RL - TRAINING SCRIPT")
+    print("=" * 60)
+    print(f"Run seed: {seed}")
+    print(f"Config path: {cfg.get('_config_path')}")
+
+    seed_everything(seed)
+
+    print("\n[1/5] Creating the port environment...")
+    env = AntwerpPortEnv()
+    apply_env_config(env, cfg.get("env", {}))
+    env.reset(seed=seed)
+    print("      Environment created.")
+
+    print("\n[2/5] Running environment safety check (check_env)...")
+    check_env(env, warn=True)
+    print("      Safety check complete.")
+
+    print("\n[3/5] Creating the PPO agent...")
+    os.makedirs("models", exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+
+    model = PPO(
+        policy="MlpPolicy",
+        env=env,
+        verbose=1,
+        learning_rate=cfg["ppo"]["learning_rate"],
+        n_steps=int(cfg["ppo"]["n_steps"]),
+        batch_size=int(cfg["ppo"]["batch_size"]),
+        n_epochs=int(cfg["ppo"]["n_epochs"]),
+        gamma=float(cfg["ppo"]["gamma"]),
+        seed=seed,
+    )
+    print("      PPO agent created.")
+
+    print("\n[4/5] Setting up callbacks...")
+    eval_env = AntwerpPortEnv()
+    apply_env_config(eval_env, cfg.get("env", {}))
+    eval_env.reset(seed=seed + 1)
+
+    stop_after_no_improve = None
+    early_cfg = cfg.get("early_stopping", {})
+    if early_cfg.get("enabled", False):
+        stop_after_no_improve = StopTrainingOnNoModelImprovement(
+            max_no_improvement_evals=int(early_cfg.get("max_no_improvement_evals", 6)),
+            min_evals=int(early_cfg.get("min_evals", 5)),
+            verbose=1,
+        )
+
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=model_save_path + "_best",
+        log_path=log_dir,
+        eval_freq=eval_freq,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False,
+        callback_after_eval=stop_after_no_improve,
     )
 
-    # Episode ends when the simulated week is over
-    if terminated or truncated:
-        break
+    checkpoint_callback = CheckpointCallback(
+        save_freq=checkpoint_freq,
+        save_path=model_save_path + "_checkpoints/",
+        name_prefix="ppo_port",
+    )
 
-# --- Print summary ---
-departed_vessels = sum(1 for v in test_env.vessels if v.status == "departed")
-still_waiting    = sum(1 for v in test_env.vessels if v.status == "waiting")
-still_docked     = sum(1 for v in test_env.vessels if v.status == "docked")
+    print("      Callbacks ready.")
 
-print(f"  Steps completed      : {total_steps} / {test_env.max_steps}")
-print(f"  Total reward         : {total_reward:.2f}")
-print(f"  Vessels departed     : {departed_vessels} / {len(test_env.vessels)}")
-print(f"  Still docked at end  : {still_docked}")
-print(f"  Still waiting at end : {still_waiting}")
-print()
-print("Vessel-by-vessel breakdown:")
-for v in test_env.vessels:
-    containers_done = v.workload - v.containers_remaining
-    pct = (containers_done / v.workload * 100) if v.workload > 0 else 0
-    print(f"  Vessel {v.id:>2} | length={v.length:>2} blocks | "
-          f"workload={v.workload:>5.0f} | status={v.status:<9} | "
-          f"processed={pct:.0f}%")
+    print("\n[5/5] Starting training...")
+    print(f"      Total timesteps: {total_timesteps:,}")
+    model.learn(total_timesteps=total_timesteps, callback=[eval_callback, checkpoint_callback])
 
-print()
-print("=" * 60)
-print("Training and evaluation complete.")
-print(f"To visualise training progress, run:")
-print(f"  tensorboard --logdir {LOG_DIR}")
-print("=" * 60)
+    print("\nTraining complete.")
+    model.save(model_save_path)
+    print(f"Final model saved to: {model_save_path}.zip")
+
+    best_model_file = os.path.join(model_save_path + "_best", "best_model.zip")
+    eval_model = model
+    if os.path.exists(best_model_file):
+        print(f"Best model found. Using for final evaluation: {best_model_file}")
+        eval_model = PPO.load(best_model_file)
+
+    print("\n" + "=" * 60)
+    print("POST-TRAINING EVALUATION - One Full Simulated Week")
+    print("=" * 60)
+
+    test_env = AntwerpPortEnv()
+    apply_env_config(test_env, cfg.get("env", {}))
+    obs, _ = test_env.reset(seed=seed + 2)
+
+    total_reward = 0.0
+    total_steps = 0
+    cranes_sum = 0.0
+    invalid_steps = 0
+
+    while True:
+        action, _ = eval_model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = test_env.step(action)
+
+        total_reward += reward
+        total_steps += 1
+        cranes_sum += float(info.get("cranes_in_use", 0))
+        invalid_steps += int(bool(info.get("invalid_action", False)))
+
+        if terminated or truncated:
+            break
+
+    departed = sum(1 for v in test_env.vessels if v.status == "departed")
+    waiting = sum(1 for v in test_env.vessels if v.status == "waiting")
+    docked = sum(1 for v in test_env.vessels if v.status == "docked")
+
+    print(f"Steps completed      : {total_steps} / {test_env.max_steps}")
+    print(f"Total reward         : {total_reward:.2f}")
+    print(f"Vessels departed     : {departed} / {len(test_env.vessels)}")
+    print(f"Still docked at end  : {docked}")
+    print(f"Still waiting at end : {waiting}")
+
+    print("\nVessel-by-vessel breakdown:")
+    for v in test_env.vessels:
+        processed = v.workload - v.containers_remaining
+        pct = (processed / v.workload * 100.0) if v.workload > 0 else 0.0
+        print(
+            f"  Vessel {v.id:>2} | length={v.length:>2} blocks | "
+            f"workload={v.workload:>5.0f} | status={v.status:<9} | "
+            f"processed={pct:.0f}%"
+        )
+
+    if cfg.get("kpi", {}).get("enabled", True):
+        metrics = compute_kpis(
+            test_env=test_env,
+            total_reward=total_reward,
+            total_steps=total_steps,
+            cranes_sum=cranes_sum,
+            invalid_steps=invalid_steps,
+            seed=seed,
+        )
+        metrics["model_save_path"] = model_save_path
+        metrics["used_best_model"] = bool(os.path.exists(best_model_file))
+        json_path, csv_path = save_kpis(cfg.get("kpi", {}), metrics)
+        print("\nKPI artifacts saved:")
+        print(f"  JSON: {json_path}")
+        print(f"  CSV : {csv_path}")
+
+    print("\n" + "=" * 60)
+    print("Training and evaluation complete.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

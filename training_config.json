@@ -1,0 +1,31 @@
+{
+  "seed": 42,
+  "total_timesteps": 500000,
+  "model_save_path": "models/ppo_antwerp_port",
+  "log_dir": "logs/",
+  "eval_freq": 10000,
+  "checkpoint_freq": 50000,
+  "ppo": {
+    "learning_rate": 0.0003,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99
+  },
+  "env": {
+    "invalid_action_penalty": 0.25,
+    "terminate_on_invalid_action": false,
+    "waiting_ship_penalty": 0.02,
+    "long_wait_penalty": 0.002,
+    "long_wait_threshold": 16
+  },
+  "early_stopping": {
+    "enabled": true,
+    "max_no_improvement_evals": 6,
+    "min_evals": 5
+  },
+  "kpi": {
+    "enabled": true,
+    "output_dir": "metrics"
+  }
+}

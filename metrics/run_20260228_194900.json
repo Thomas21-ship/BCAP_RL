@@ -1,0 +1,19 @@
+{
+  "timestamp_utc": "2026-02-28T19:49:00Z",
+  "seed": 7,
+  "total_reward": -2199.5524598528887,
+  "total_steps": 672,
+  "vessels_total": 10,
+  "vessels_departed": 1,
+  "vessels_docked": 0,
+  "vessels_waiting": 9,
+  "completion_ratio": 0.1,
+  "mean_docking_wait_steps": 0.401765732053633,
+  "max_docking_wait_steps": 0.401765732053633,
+  "mean_unresolved_wait_steps": 393.5309727397288,
+  "avg_processed_pct": 10.0,
+  "crane_utilization": 0.02891156462585034,
+  "invalid_action_rate": 0.9985119047619048,
+  "model_save_path": "models/ppo_antwerp_port",
+  "used_best_model": false
+}
