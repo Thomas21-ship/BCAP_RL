@@ -10,7 +10,7 @@ import torch
 from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
 
-from port_env import AntwerpPortEnv
+from port_env import PortEnv
 
 
 DEFAULT_CONFIG = {
@@ -80,7 +80,7 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def apply_env_config(env: AntwerpPortEnv, env_cfg: dict) -> None:
+def apply_env_config(env: PortEnv, env_cfg: dict) -> None:
     for key, value in env_cfg.items():
         if hasattr(env, key):
             setattr(env, key, value)
@@ -96,7 +96,7 @@ def main() -> None:
 
     seed_everything(seed)
 
-    env = AntwerpPortEnv()
+    env = PortEnv()
     apply_env_config(env, env_cfg)
     env.reset(seed=seed)
 

@@ -2,13 +2,13 @@ import unittest
 
 import numpy as np
 
-from port_env import AntwerpPortEnv
+from port_env import PortEnv
 from ship_generator import generate_single_vessel
 
 
 class TestPortEnv(unittest.TestCase):
     def test_action_decode_mapping_and_noop(self):
-        env = AntwerpPortEnv()
+        env = PortEnv()
         seen = set()
 
         for action in range(env.action_space.n):
@@ -29,7 +29,7 @@ class TestPortEnv(unittest.TestCase):
         self.assertEqual(len(seen), env.num_docking_actions)
 
     def test_observation_shape_and_bounds(self):
-        env = AntwerpPortEnv()
+        env = PortEnv()
 
         for _ in range(5):
             obs, _ = env.reset()
@@ -47,7 +47,7 @@ class TestPortEnv(unittest.TestCase):
                 done = terminated or truncated
 
     def test_crane_conservation(self):
-        env = AntwerpPortEnv()
+        env = PortEnv()
         env.reset()
 
         for _ in range(300):
@@ -59,7 +59,7 @@ class TestPortEnv(unittest.TestCase):
                 break
 
     def test_terminates_at_max_steps(self):
-        env = AntwerpPortEnv()
+        env = PortEnv()
         env.reset()
 
         steps = 0

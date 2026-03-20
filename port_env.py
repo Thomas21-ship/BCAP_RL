@@ -6,7 +6,7 @@ from ship_generator import generate_single_vessel
 from ship_manager import Vessel
 
 
-class AntwerpPortEnv(gym.Env):
+class PortEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
@@ -33,10 +33,11 @@ class AntwerpPortEnv(gym.Env):
         # We also reserve one dedicated NO-OP action at the end.
         self.num_vessel_slots = 10
         self.crane_choices = self.total_cranes_limit + 1  # 0..7
-        self.actions_per_vessel = self.quay_size * self.crane_choices
-        self.num_docking_actions = self.num_vessel_slots * self.actions_per_vessel
+        self.num_docking_actions = self.num_vessel_slots * self.quay_size * self.crane_choices
+      
         self.no_op_action = self.num_docking_actions
         self.no_op_slot = self.num_vessel_slots
+
         self.action_space = spaces.Discrete(self.no_op_action + 1)
 
         # --- OBSERVATION SPACE ---
@@ -366,7 +367,7 @@ class AntwerpPortEnv(gym.Env):
 if __name__ == "__main__":
     print("=== Testing AntwerpPortEnv ===\n")
 
-    env = AntwerpPortEnv()
+    env = PortEnv()
 
     # reset() starts a new week and gives us the first observation
     obs, info = env.reset()
