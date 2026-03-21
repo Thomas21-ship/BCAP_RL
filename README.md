@@ -8,7 +8,7 @@ The codebase is intentionally minimal and modular to support stable refactoring,
 - `env/port_env.py`: Gymnasium environment (single source of truth).
 - `env/port_env_dynamics.py`: reset/step helpers used by `port_env.py`.
 - `env/port_env_spec.py`: action + observation helpers used by `port_env.py`.
-- `training/train.ipynb`: single training entrypoint (notebook).
+- `training/train.py`: single training entrypoint (script).
 - `training/config.py`: training defaults and config loader.
 - `training/seed.py`: seeding utilities.
 - `training/env_setup.py`: environment config and build helpers.
@@ -17,7 +17,7 @@ The codebase is intentionally minimal and modular to support stable refactoring,
 - `training_config.json`: runtime training and environment config.
 - `ship_generator.py`: stochastic vessel generation.
 - `ship_manager.py`: vessel state model.
-- `port_env_quick_test.ipynb`: quick environment sanity checks.
+- `port_env_quick_test.py`: quick environment sanity checks.
 
 ## Setup
 
@@ -27,7 +27,7 @@ Baseline requirements:
 
 ## Training
 
-Use `training/train.ipynb` as the single training entrypoint. The notebook follows this flow:
+Use `training/train.py` as the single training entrypoint. The script follows this flow:
 1. Load `training_config.json`.
 2. Validate the environment (`check_env`).
 3. Train the model.
@@ -36,7 +36,7 @@ Use `training/train.ipynb` as the single training entrypoint. The notebook follo
 6. Optionally evaluate the model.
 
 Environment validation:
-- Use `port_env_quick_test.ipynb` for quick sanity checks.
+- Use `port_env_quick_test.py` for quick sanity checks.
 
 ## Config
 

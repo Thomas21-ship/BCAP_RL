@@ -1,6 +1,30 @@
 import numpy as np
 
 
+class Vessel:
+    def __init__(self, vessel_id, length, workload, arrival_time):
+        # --- IDENTITY & PHYSICAL STATS (from generator) ---
+        self.id = vessel_id
+        self.length = length
+        self.workload = workload
+        self.arrival_time = arrival_time
+
+        # --- DYNAMIC STATE (changes during simulation) ---
+        self.status = "waiting"  # "waiting", "docked", "departed"
+        self.containers_remaining = workload
+        self.cranes_assigned = 0
+
+    def is_finished(self):
+        return self.containers_remaining <= 0
+
+    def __repr__(self):
+        return (
+            f"Vessel(id={self.id}, length={self.length}, "
+            f"status={self.status}, containers_remaining={self.containers_remaining}, "
+            f"cranes_assigned={self.cranes_assigned})"
+        )
+
+
 def generate_single_vessel(
     last_arrival_time=0,
     min_length=2,
@@ -25,3 +49,6 @@ def generate_single_vessel(
     arrival_time = last_arrival_time + inter_arrival_time
 
     return [float(length), float(workload), float(arrival_time)]
+
+
+__all__ = ["Vessel", "generate_single_vessel"]

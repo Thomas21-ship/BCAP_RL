@@ -1,8 +1,7 @@
 import gymnasium as gym
 import numpy as np
 
-from ship_generator import generate_single_vessel
-from ship_manager import Vessel
+from .vessel import generate_single_vessel, Vessel
 from .port_env_spec import decode_action
 
 
@@ -128,7 +127,7 @@ def step_env(env, action):
         invalid_reason = "invalid_vessel_slot"
 
     if invalid_action:
-        raise RuntimeError(f"Invalid action: {invalid_reason}")
+        reward -= env.invalid_action_penalty
 
     # 3. Process docked vessels
     for vessel in env.vessels:

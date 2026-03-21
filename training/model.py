@@ -34,6 +34,9 @@ def train_model(
     cfg: Dict[str, Any],
     seed_override: int | None = None,
     timesteps_override: int | None = None,
+    run_id: str | None = None,
+    config_hash: str | None = None,
+    eval_seeds: List[int] | None = None,
 ) -> Tuple[DQN, Dict[str, Any], List[float]]:
     seed = int(seed_override if seed_override is not None else cfg["seed"])
     total_timesteps = int(
@@ -52,12 +55,21 @@ def train_model(
     log_path = grading_cfg.get("log_path")
     if eval_interval_steps > 0 and log_path:
         episodes = int(grading_cfg.get("episodes", 10))
+        seeds = (
+            list(eval_seeds)
+            if eval_seeds is not None
+            else [seed + 1000]
+        )
+        effective_run_id = run_id or "unknown"
+        effective_config_hash = config_hash or "unknown"
         callback = build_eval_callback(
             env_cfg=env_cfg,
             episodes=episodes,
             eval_interval_steps=eval_interval_steps,
             log_path=str(log_path),
-            seed=seed + 1000,
+            seeds=seeds,
+            run_id=effective_run_id,
+            config_hash=effective_config_hash,
         )
 
     model.learn(total_timesteps=total_timesteps, callback=callback)
