@@ -1,6 +1,6 @@
 {
   "seed": 42,
-  "total_timesteps": 500000,
+  "total_timesteps": 2000000,
   "model_save_path": "models/dqn_antwerp_port",
   "dqn": {
     "learning_rate": 0.0003,

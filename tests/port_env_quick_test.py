@@ -13,8 +13,7 @@ def _add_repo_root_to_path() -> None:
 
 _add_repo_root_to_path()
 
-from env.port_env import PortEnv
-from env.port_env_spec import encode_action, decode_action
+from env.port_env import PortEnv, encode_action, decode_action
 
 SEED = 42
 ROLLOUT_STEPS = 50
