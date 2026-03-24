@@ -109,12 +109,6 @@ Ordering rules:
 - `train_model` returns `(model, cfg, episode_rewards)`; reward history is kept in-memory and written as a plot.
 - Any observation shape or order change invalidates previously trained models.
 
-## Engineering Rules
-
-- Keep core logic explainable end-to-end.
-- Do not add non-core layers until core behavior is fully stable.
-- Treat generated outputs (`models/`, `logs/`, `metrics/`) as disposable artifacts.
-
 ## Notes on Artifacts
 
 - Saved models and metrics are organized under `models/<run_id>/` and `metrics/runs/<run_id>/`.
